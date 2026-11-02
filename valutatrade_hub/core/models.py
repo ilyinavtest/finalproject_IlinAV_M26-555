@@ -165,3 +165,85 @@ class Wallet:
             currency_code=data["currency_code"],
             balance=data["balance"]
         )
+
+
+class Portfolio:
+    """Управление всеми кошельками одного пользователя"""
+
+    def __init__(self, user: User) -> None:
+        """Инициализация портфеля для конкретного пользователя
+        Сохраняем ссылку на пользователя и создаем пустой словарь кошельков
+        """
+        self._user = user
+        self._user_id = user.user_id
+        self._wallets: dict[str, Wallet] = {}
+
+    @property
+    def user(self) -> User:
+        """Геттер, возвращающий объект пользователя (без возможности перезаписи)"""
+        return self._user
+
+    @property
+    def wallets(self) -> dict[str, Wallet]:
+        """Геттер, возвращающий копию словаря кошельков"""
+        return self._wallets.copy()
+
+    def add_currency(self, currency_code: str) -> Wallet:
+        """Добавляет новый кошелёк в портфель (если его ещё нет)
+        Возвращает созданный (или уже существующий) объект Wallet
+        """
+        currency_code = currency_code.upper()
+        if currency_code in self._wallets:
+            return self._wallets[currency_code]
+
+        new_wallet = Wallet(currency_code=currency_code, balance=0.0)
+        self._wallets[currency_code] = new_wallet
+        return new_wallet
+
+    def get_wallet(self, currency_code: str) -> Wallet | None:
+        """Возвращает объект Wallet по коду валюты, либо None, если его нет"""
+        return self._wallets.get(currency_code.upper())
+
+    def get_total_value(self, base_currency: str = "USD") -> float:
+        """Возвращает общую стоимость всех валют пользователя в указанной базовой валюте
+        Для упрощения используем фиксированные курсы (заглушки)
+        В будущем здесь будет обращение к реальным курсам из rates.json
+        """
+        # Условные курсы к USD (заглушка)
+        exchange_rates = {
+            "USD": 1.0,
+            "EUR": 1.08,
+            "RUB": 0.011,
+            "BTC": 60000.0,
+            "ETH": 3000.0,
+            "USDT": 1.0,
+        }
+
+        base_rate = exchange_rates.get(base_currency.upper(), 1.0)
+        total = 0.0
+
+        for code, wallet in self._wallets.items():
+            rate_to_usd = exchange_rates.get(code, 0.0)
+            total += (wallet.balance * rate_to_usd) / base_rate
+
+        return total
+
+
+    def to_dict(self) -> dict:
+        """Сериализация портфеля для сохранения в JSON"""
+        return {
+            "user_id": self._user_id,
+            "wallets": {
+                code: {"balance": wallet.balance}
+                for code, wallet in self._wallets.items()
+            }
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict, user: User) -> "Portfolio":
+        """Создание портфеля из словаря (при чтении из JSON)"""
+        portfolio = cls(user=user)
+        for code, wallet_data in data.get("wallets", {}).items():
+            wallet = portfolio.add_currency(code)
+            wallet.balance = wallet_data.get("balance", 0.0)
+        return portfolio
