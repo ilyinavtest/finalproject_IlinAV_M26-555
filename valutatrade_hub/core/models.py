@@ -96,3 +96,72 @@ class User:
             salt=data["salt"],
             registration_date=datetime.fromisoformat(data["registration_date"]),
         )
+
+
+class Wallet:
+    """Кошелёк пользователя для одной конкретной валюты"""
+
+    def __init__(self, currency_code: str, balance: float = 0.0) -> None:
+        """Инициализация кошелька
+        По умолчанию баланс равен 0.0. Проверка на отрицательный баланс
+        произойдет автоматически через сеттер свойства balance
+        """
+        self.currency_code = currency_code
+        self._balance = 0.0
+        self.balance = balance
+
+    @property
+    def balance(self) -> float:
+        """Геттер для получения текущего баланса"""
+        return self._balance
+
+    @balance.setter
+    def balance(self, value: float) -> None:
+        """Сеттер с защитой от отрицательных значений и некорректных типов"""
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError("Баланс должен быть числом")
+        if value < 0:
+            raise ValueError("Баланс не может быть отрицательным")
+        self._balance = float(value)
+
+    def deposit(self, amount: float) -> None:
+        """Пополнение баланса на указанную сумму"""
+        if not isinstance(amount, (int, float)) or isinstance(amount, bool):
+            raise ValueError("Сумма пополнения должна быть числом")
+        if amount <= 0:
+            raise ValueError("Сумма пополнения должна быть положительным числом")
+
+        self.balance = self._balance + amount
+
+    def withdraw(self, amount: float) -> None:
+        """Снятие средств с проверкой достаточности баланса"""
+        if not isinstance(amount, (int, float)) or isinstance(amount, bool):
+            raise ValueError("Сумма снятия должна быть числом")
+        if amount <= 0:
+            raise ValueError("Сумма снятия должна быть положительным числом")
+        if amount > self._balance:
+            raise ValueError("Недостаточно средств на кошельке")
+
+        self.balance = self._balance - amount
+
+    def get_balance_info(self) -> dict[str, str | float]:
+        """Вывод информации о текущем балансе"""
+        return {
+            "currency_code": self.currency_code,
+            "balance": self._balance
+        }
+
+    def to_dict(self) -> dict:
+        """Сериализация кошелька для сохранения в JSON"""
+        return {
+            "currency_code": self.currency_code,
+            "balance": self._balance
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Wallet":
+        """Создание кошелька из словаря (при чтении из JSON)"""
+        return cls(
+            currency_code=data["currency_code"],
+            balance=data["balance"]
+        )
