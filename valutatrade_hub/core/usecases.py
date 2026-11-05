@@ -119,17 +119,26 @@ def get_rate(from_currency: str, to_currency: str) -> dict:
     if pair in rates:
         return rates[pair]
 
-    # Если прямой пары нет, пробуем через USD
-    if from_c != "USD" and to_c != "USD":
-        usd_from = rates.get(f"{from_c}_USD")
-        usd_to = rates.get(f"{to_c}_USD")
-        if usd_from and usd_to:
-            rate = usd_from["rate"] / usd_to["rate"]
-            return {
-                "rate": rate,
-                "updated_at": usd_from["updated_at"],
-                "source": "calculated",
-            }
+    # Обратная пара: если есть to_from, инвертируем
+    reverse_pair = f"{to_c}_{from_c}"
+    if reverse_pair in rates:
+        rev = rates[reverse_pair]
+        return {
+            "rate": 1.0 / rev["rate"],
+            "updated_at": rev["updated_at"],
+            "source": "calculated",
+        }
+
+    # Кросс-курс через USD (когда одна из валют USD или обе не USD)
+    usd_from = rates.get(f"{from_c}_USD")
+    usd_to = rates.get(f"{to_c}_USD")
+    if usd_from and usd_to:
+        rate = usd_from["rate"] / usd_to["rate"]
+        return {
+            "rate": rate,
+            "updated_at": usd_from["updated_at"],
+            "source": "calculated",
+        }
 
     raise ValueError(f"Курс {from_c}->{to_c} недоступен. Повторите попытку позже")
 
