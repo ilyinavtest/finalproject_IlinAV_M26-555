@@ -160,11 +160,13 @@ def buy_currency(user_id: int, currency: str, amount: float) -> dict:
     save_portfolio(portfolio)
 
     # Получаем курс для оценки стоимости (опционально)
+    rate_error = None
     try:
         rate_info = get_rate(currency, "USD")
         rate = rate_info["rate"]
     except ValueError:
         rate = 0.0
+        rate_error = f"Не удалось получить курс для {currency}->USD"
 
     return {
         "currency": currency,
@@ -172,6 +174,7 @@ def buy_currency(user_id: int, currency: str, amount: float) -> dict:
         "new_balance": wallet.balance,
         "rate": rate,
         "total_cost": amount * rate,
+        "rate_error": rate_error,
     }
 
 

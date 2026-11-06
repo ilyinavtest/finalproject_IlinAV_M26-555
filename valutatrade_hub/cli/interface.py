@@ -50,6 +50,14 @@ def cmd_show_portfolio(args: argparse.Namespace) -> None:
     user = _require_login()
     base = args.base.upper()
 
+    # Проверка, что базовая валюта известна
+    if base != "USD":
+        try:
+            get_rate("USD", base)
+        except ValueError:
+            print(f"Ошибка: Неизвестная базовая валюта '{base}'")
+            return
+
     portfolio = get_portfolio(user.user_id)
     wallets = portfolio.wallets
 
@@ -94,7 +102,9 @@ def cmd_buy(args: argparse.Namespace) -> None:
         f"- {result['currency']}: было {result['old_balance']:.4f} "
         f"-> стало {result['new_balance']:.4f}"
     )
-    if result["rate"] > 0:
+    if result.get("rate_error"):
+        print(f"Ошибка: {result['rate_error']}")
+    elif result["rate"] > 0:
         print(f"Оценочная стоимость покупки: {result['total_cost']:,.2f} USD")
 
 
