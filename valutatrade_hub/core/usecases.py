@@ -4,6 +4,7 @@ import hashlib
 import secrets
 from datetime import datetime
 
+from valutatrade_hub.core.currencies import get_currency
 from valutatrade_hub.core.exceptions import InsufficientFundsError  # noqa: F401
 from valutatrade_hub.core.models import Portfolio, User
 from valutatrade_hub.core.utils import (
@@ -111,8 +112,8 @@ def save_portfolio(portfolio: Portfolio) -> None:
 
 def get_rate(from_currency: str, to_currency: str) -> dict:
     """Возвращает курс валют. Пока используется заглушка из rates.json"""
-    from_c = validate_currency(from_currency)
-    to_c = validate_currency(to_currency)
+    from_c = get_currency(from_currency).code
+    to_c = get_currency(to_currency).code
 
     rates = load_json("rates.json")
     pair = f"{from_c}_{to_c}"
