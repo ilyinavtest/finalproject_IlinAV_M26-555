@@ -13,7 +13,8 @@ def ensure_data_files() -> None:
     files = {
         "users.json": [],
         "portfolios.json": [],
-        "rates.json": {},
+        "rates.json": {"pairs": {}, "last_refresh": None},
+        "exchange_rates.json": [],
     }
 
     for filename, default_data in files.items():
