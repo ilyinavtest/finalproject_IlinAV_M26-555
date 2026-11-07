@@ -6,7 +6,12 @@ CLI только оркестрирует: парсит аргументы, вы
 
 import argparse
 
-from valutatrade_hub.core.exceptions import InsufficientFundsError
+from valutatrade_hub.core.currencies import _CURRENCIES
+from valutatrade_hub.core.exceptions import (
+    ApiRequestError,
+    CurrencyNotFoundError,
+    InsufficientFundsError,
+)
 from valutatrade_hub.core.models import User
 from valutatrade_hub.core.usecases import (
     buy_currency,
@@ -209,6 +214,16 @@ def main() -> None:
         args.func(args)
     except InsufficientFundsError as e:
         print(f"Ошибка: {e}")
+    except CurrencyNotFoundError as e:
+        print(f"Ошибка: {e}")
+        print(
+            "Подсказка: проверьте код валюты (help get-rate) "
+            "или список поддерживаемых кодов:"
+        )
+        print("  " + ", ".join(sorted(_CURRENCIES.keys())))
+    except ApiRequestError as e:
+        print(f"Ошибка: {e}")
+        print("Подсказка: повторите попытку позже или проверьте сеть.")
     except ValueError as e:
         print(f"Ошибка: {e}")
 
