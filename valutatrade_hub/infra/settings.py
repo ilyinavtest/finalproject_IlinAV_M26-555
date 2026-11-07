@@ -10,6 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -27,6 +29,8 @@ _DEFAULTS: dict[str, Any] = {
     "log_file": "logs/actions.log",
 }
 
+# Загружаем .env (если файл есть) один раз при импорте модуля.
+load_dotenv(PROJECT_ROOT / ".env")
 
 class SettingsLoader:
     """Синглтон-загрузчик конфигурации из pyproject.toml -> [tool.valutatrade]

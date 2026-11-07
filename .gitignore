@@ -20,3 +20,4 @@ data/*.json
 !data/.gitkeep
 *.log
 logs/
+.env
