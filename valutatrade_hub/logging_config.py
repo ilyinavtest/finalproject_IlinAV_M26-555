@@ -67,3 +67,35 @@ def setup_logging() -> logging.Logger:
 def get_logger() -> logging.Logger:
     """Возвращает настроенный логгер (при необходимости инициализирует)."""
     return setup_logging()
+
+_PARSER_LOGGER_NAME = "valutatrade.parser"
+
+
+def get_parser_logger() -> logging.Logger:
+    """Возвращает логгер Parser Service (пишет в logs/parser.log).
+
+    Отдельный от 'valutatrade' (actions.log), чтобы разделить логи
+    бизнес-операций и парсера (по ТЗ п.4.4: 'Check logs/parser.log').
+    """
+    settings = get_settings()
+    logger = logging.getLogger(_PARSER_LOGGER_NAME)
+
+    if logger.handlers:
+        return logger
+
+    log_level = str(settings.get("log_level", "INFO")).upper()
+    logs_dir = settings.get("log_file_abs").parent
+    parser_log_file = logs_dir / "parser.log"
+
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
+    logger.propagate = False
+
+    handler = RotatingFileHandler(
+        filename=str(parser_log_file),
+        maxBytes=1_000_000,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    handler.setFormatter(_FORMATTER_TEXT)
+    logger.addHandler(handler)
+    return logger
