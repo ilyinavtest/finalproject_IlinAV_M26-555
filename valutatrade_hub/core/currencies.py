@@ -77,8 +77,10 @@ _CURRENCIES: dict[str, Currency] = {
     "USD": FiatCurrency("US Dollar", "USD", "United States"),
     "EUR": FiatCurrency("Euro", "EUR", "Eurozone"),
     "RUB": FiatCurrency("Russian Ruble", "RUB", "Russia"),
+    "GBP": FiatCurrency("British Pound", "GBP", "United Kingdom"),
     "BTC": CryptoCurrency("Bitcoin", "BTC", "SHA-256", 1.12e12),
     "ETH": CryptoCurrency("Ethereum", "ETH", "Ethash", 4.5e11),
+    "SOL": CryptoCurrency("Solana", "SOL", "Proof of History", 6.0e10),
     "USDT": CryptoCurrency("Tether", "USDT", "Omni", 1.0e11),
 }
 
