@@ -2,17 +2,18 @@
 
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from valutatrade_hub.core.currencies import get_currency
-from valutatrade_hub.core.exceptions import InsufficientFundsError  # noqa: F401
+from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.core.models import Portfolio, User
 from valutatrade_hub.core.utils import (
     load_json,
     save_json,
     validate_amount,
-    validate_currency,
 )
+from valutatrade_hub.decorators import log_action
+from valutatrade_hub.infra.settings import get_settings
 
 
 def _hash_password(password: str, salt: str) -> str:
@@ -20,6 +21,7 @@ def _hash_password(password: str, salt: str) -> str:
     return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
 
 
+@log_action
 def register_user(username: str, password: str) -> User:
     """Регистрирует нового пользователя и создает для него пустой портфель"""
     if not username or not username.strip():
@@ -62,6 +64,7 @@ def register_user(username: str, password: str) -> User:
     return User.from_dict(new_user_dict)
 
 
+@log_action
 def login_user(username: str, password: str) -> User:
     """Аутентифицирует пользователя по имени и паролю"""
     users_data = load_json("users.json")
@@ -111,15 +114,37 @@ def save_portfolio(portfolio: Portfolio) -> None:
 
 
 def get_rate(from_currency: str, to_currency: str) -> dict:
-    """Возвращает курс валют. Пока используется заглушка из rates.json"""
+    """Возвращает курс валют с учётом TTL из SettingsLoader.
+
+    Если данные устарели — пытаемся обновить (пока заглушка:
+    парсер не подключён -> ApiRequestError).
+    """
     from_c = get_currency(from_currency).code
     to_c = get_currency(to_currency).code
 
     rates = load_json("rates.json")
     pair = f"{from_c}_{to_c}"
 
-    if pair in rates:
-        return rates[pair]
+    # Проверка TTL по last_refresh (или updated_at конкретной пары)
+    ttl_seconds = int(get_settings().get("rates_ttl_seconds", 300))
+    entry = rates.get(pair)
+    if entry is not None:
+        updated_at_str = entry.get("updated_at")
+        if updated_at_str:
+            try:
+                updated_at = datetime.fromisoformat(updated_at_str)
+                age = datetime.now() - updated_at
+                if age <= timedelta(seconds=ttl_seconds):
+                    return entry
+            except ValueError:
+                pass  # битая дата — считаем, что устарело
+
+    # Кеш устарел (или отсутствует) — попытка обновления (заглушка).
+    # В блоке 4 здесь будет вызов RatesUpdater.run_update().
+    raise ApiRequestError(
+        f"Курс {from_c}->{to_c} устарел, обновление недоступно: "
+        "парсер не подключён. Повторите попытку позже."
+    )
 
     # Обратная пара: если есть to_from, инвертируем
     reverse_pair = f"{to_c}_{from_c}"
@@ -145,9 +170,10 @@ def get_rate(from_currency: str, to_currency: str) -> dict:
     raise ValueError(f"Курс {from_c}->{to_c} недоступен. Повторите попытку позже")
 
 
+@log_action
 def buy_currency(user_id: int, currency: str, amount: float) -> dict:
     """Покупка валюты."""
-    currency = validate_currency(currency)
+    currency = get_currency(currency).code
     amount = validate_amount(amount)
 
     portfolio = get_portfolio(user_id)
@@ -166,7 +192,7 @@ def buy_currency(user_id: int, currency: str, amount: float) -> dict:
     try:
         rate_info = get_rate(currency, "USD")
         rate = rate_info["rate"]
-    except ValueError:
+    except (ValueError, ApiRequestError):
         rate = 0.0
         rate_error = f"Не удалось получить курс для {currency}->USD"
 
@@ -180,9 +206,10 @@ def buy_currency(user_id: int, currency: str, amount: float) -> dict:
     }
 
 
+@log_action
 def sell_currency(user_id: int, currency: str, amount: float) -> dict:
     """Продажа валюты."""
-    currency = validate_currency(currency)
+    currency = get_currency(currency).code
     amount = validate_amount(amount)
 
     portfolio = get_portfolio(user_id)
@@ -202,7 +229,7 @@ def sell_currency(user_id: int, currency: str, amount: float) -> dict:
     try:
         rate_info = get_rate(currency, "USD")
         rate = rate_info["rate"]
-    except ValueError:
+    except (ValueError, ApiRequestError):
         rate = 0.0
 
     return {

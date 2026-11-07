@@ -94,10 +94,14 @@ def cmd_buy(args: argparse.Namespace) -> None:
     user = _require_login()
     result = buy_currency(user.user_id, args.currency, args.amount)
 
-    print(
-        f"Покупка выполнена: {args.amount:.4f} {result['currency']} "
-        f"по курсу {result['rate']:,.2f} USD/{result['currency']}"
-    )
+    if result["rate"] > 0:
+        print(
+            f"Покупка выполнена: {args.amount:.4f} {result['currency']} "
+            f"по курсу {result['rate']:,.2f} USD/{result['currency']}"
+        )
+    else:
+        print(f"Покупка выполнена: {args.amount:.4f} {result['currency']}")
+
     print("Изменения в портфеле:")
     print(
         f"- {result['currency']}: было {result['old_balance']:.4f} "
@@ -114,10 +118,14 @@ def cmd_sell(args: argparse.Namespace) -> None:
     user = _require_login()
     result = sell_currency(user.user_id, args.currency, args.amount)
 
-    print(
-        f"Продажа выполнена: {args.amount:.4f} {result['currency']} "
-        f"по курсу {result['rate']:,.2f} USD/{result['currency']}"
-    )
+    if result["rate"] > 0:
+        print(
+            f"Продажа выполнена: {args.amount:.4f} {result['currency']} "
+            f"по курсу {result['rate']:,.2f} USD/{result['currency']}"
+        )
+    else:
+        print(f"Продажа выполнена: {args.amount:.4f} {result['currency']}")
+
     print("Изменения в портфеле:")
     print(
         f"- {result['currency']}: было {result['old_balance']:.4f} "
