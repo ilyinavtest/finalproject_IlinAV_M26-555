@@ -4,6 +4,7 @@ import hashlib
 import secrets
 from datetime import datetime
 
+from valutatrade_hub.core.exceptions import InsufficientFundsError  # noqa: F401
 from valutatrade_hub.core.models import Portfolio, User
 from valutatrade_hub.core.utils import (
     load_json,
@@ -193,13 +194,7 @@ def sell_currency(user_id: int, currency: str, amount: float) -> dict:
         )
 
     old_balance = wallet.balance
-    try:
-        wallet.withdraw(amount)
-    except ValueError as e:
-        raise ValueError(
-            f"Недостаточно средств: доступно {old_balance:.4f} {currency}, "
-            f"требуется {amount:.4f} {currency}"
-        ) from e
+    wallet.withdraw(amount)  # при нехватке сам бросит InsufficientFundsError
 
     save_portfolio(portfolio)
 
