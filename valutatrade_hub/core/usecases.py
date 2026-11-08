@@ -116,58 +116,80 @@ def save_portfolio(portfolio: Portfolio) -> None:
 def get_rate(from_currency: str, to_currency: str) -> dict:
     """Возвращает курс валют с учётом TTL из SettingsLoader.
 
-    Если данные устарели — пытаемся обновить (пока заглушка:
-    парсер не подключён -> ApiRequestError).
+    Логика:
+    - Прямая пара (CODE_USD) в кеше и свежая -> возвращаем.
+    - Прямая пара устарела/нет, но есть обратная (USD_CODE) и она свежая ->
+      возвращаем инвертированный курс (source='calculated').
+    - Иначе -> пытаемся обновить через RatesUpdater, затем повторяем проверку.
+    - Если после обновления курса всё равно нет -> ApiRequestError.
     """
     from_c = get_currency(from_currency).code
     to_c = get_currency(to_currency).code
-
-    rates = load_json("rates.json")
     pair = f"{from_c}_{to_c}"
-
-    # Проверка TTL по last_refresh (или updated_at конкретной пары)
-    ttl_seconds = int(get_settings().get("rates_ttl_seconds", 300))
-    entry = rates.get(pair)
-    if entry is not None:
-        updated_at_str = entry.get("updated_at")
-        if updated_at_str:
-            try:
-                updated_at = datetime.fromisoformat(updated_at_str)
-                age = datetime.now() - updated_at
-                if age <= timedelta(seconds=ttl_seconds):
-                    return entry
-            except ValueError:
-                pass  # битая дата — считаем, что устарело
-
-    # Кеш устарел (или отсутствует) — попытка обновления (заглушка).
-    # В блоке 4 здесь будет вызов RatesUpdater.run_update().
-    raise ApiRequestError(
-        f"Курс {from_c}->{to_c} устарел, обновление недоступно: "
-        "парсер не подключён. Повторите попытку позже."
-    )
-
-    # Обратная пара: если есть to_from, инвертируем
     reverse_pair = f"{to_c}_{from_c}"
-    if reverse_pair in rates:
-        rev = rates[reverse_pair]
-        return {
-            "rate": 1.0 / rev["rate"],
-            "updated_at": rev["updated_at"],
-            "source": "calculated",
-        }
 
-    # Кросс-курс через USD (когда одна из валют USD или обе не USD)
-    usd_from = rates.get(f"{from_c}_USD")
-    usd_to = rates.get(f"{to_c}_USD")
-    if usd_from and usd_to:
-        rate = usd_from["rate"] / usd_to["rate"]
-        return {
-            "rate": rate,
-            "updated_at": usd_from["updated_at"],
-            "source": "calculated",
-        }
+    def _read_pairs() -> dict:
+        """Возвращает словарь {'pairs': {...}} из rates.json (новый формат)."""
+        data = load_json("rates.json")
+        pairs = data.get("pairs") if isinstance(data, dict) else None
+        return pairs if isinstance(pairs, dict) else {}
 
-    raise ValueError(f"Курс {from_c}->{to_c} недоступен. Повторите попытку позже")
+    def _is_fresh(entry: dict, ttl_seconds: int) -> bool:
+        """Свежий ли курс относительно TTL."""
+        updated_at_str = entry.get("updated_at")
+        if not updated_at_str:
+            return False
+        try:
+            updated_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        now = datetime.now(tz=updated_at.tzinfo)
+        return (now - updated_at) <= timedelta(seconds=ttl_seconds)
+
+    def _try_get(pairs: dict, ttl_seconds: int) -> dict | None:
+        """Пытается достать курс (прямой или обратный) из pairs."""
+        entry = pairs.get(pair)
+        if entry is not None and _is_fresh(entry, ttl_seconds):
+            return entry
+
+        rev = pairs.get(reverse_pair)
+        if rev is not None and _is_fresh(rev, ttl_seconds) and rev.get("rate"):
+            return {
+                "rate": 1.0 / rev["rate"],
+                "updated_at": rev["updated_at"],
+                "source": "calculated",
+            }
+        return None
+
+    ttl_seconds = int(get_settings().get("rates_ttl_seconds", 300))
+
+    # 1. Пытаемся взять из кеша.
+    pairs = _read_pairs()
+    result = _try_get(pairs, ttl_seconds)
+    if result is not None:
+        return result
+
+    # 2. Кеш устарел или пуст — обновляем через Parser Service.
+    try:
+        from valutatrade_hub.parser_service.updater import RatesUpdater
+
+        updater = RatesUpdater.from_config()
+        updater.run_update()
+    except Exception as exc:
+        raise ApiRequestError(
+            f"Не удалось обновить курс {from_c}->{to_c}: {exc}"
+        ) from exc
+
+    # 3. Повторно читаем кеш после обновления.
+    pairs = _read_pairs()
+    result = _try_get(pairs, ttl_seconds)
+    if result is not None:
+        return result
+
+    raise ApiRequestError(
+        f"Курс {from_c}->{to_c} недоступен после обновления. "
+        "Повторите попытку позже."
+    )
 
 
 @log_action
