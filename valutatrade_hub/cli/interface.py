@@ -6,6 +6,8 @@ CLI только оркестрирует: парсит аргументы, вы
 
 import argparse
 
+from prettytable import PrettyTable
+
 from valutatrade_hub.core.currencies import _CURRENCIES
 from valutatrade_hub.core.exceptions import (
     ApiRequestError,
@@ -22,6 +24,7 @@ from valutatrade_hub.core.usecases import (
     sell_currency,
 )
 from valutatrade_hub.core.utils import ensure_data_files
+from valutatrade_hub.parser_service.updater import RatesUpdater
 
 # Текущий залогиненный пользователь (сессия в памяти процесса).
 CURRENT_USER: User | None = None
@@ -159,6 +162,141 @@ def cmd_get_rate(args: argparse.Namespace) -> None:
         pass
 
 
+def cmd_update_rates(args: argparse.Namespace) -> None:
+    """Обработчик команды update-rates: ручной запуск Parser Service."""
+
+    sources = None
+    if args.source:
+        sources = [args.source]
+
+    print("Запуск обновления курсов...")
+    updater = RatesUpdater.from_config()
+    result = updater.run_update(sources=sources)
+
+    updated = result.get("updated", 0)
+    errors = result.get("errors") or []
+    last_refresh = result.get("last_refresh")
+
+    if updated == 0:
+        print(
+            "Ошибка: не удалось обновить ни один курс. "
+            "Подробности в logs/parser.log."
+        )
+        return
+
+    if errors:
+        print(
+            f"Обновление завершено с ошибками. Обновлено курсов: {updated}."
+        )
+        print("Подробности в logs/parser.log.")
+    else:
+        print(f"Обновление успешно. Обновлено курсов: {updated}.")
+    if last_refresh:
+        print(f"Время последнего обновления: {last_refresh}")
+
+
+def cmd_show_rates(args: argparse.Namespace) -> None:
+    """Обработчик команды show-rates: показывает курсы из локального кеша."""
+    from valutatrade_hub.parser_service.config import get_parser_config
+    from valutatrade_hub.parser_service.storage import RateStorage
+
+    cfg = get_parser_config()
+    storage = RateStorage(cfg)
+    cache = storage.load_rates_cache()
+    pairs = cache.get("pairs") or {}
+    last_refresh = cache.get("last_refresh") or "неизвестно"
+
+    if not pairs:
+        print(
+            "Локальный кеш курсов пуст. "
+            "Выполните 'update-rates', чтобы загрузить данные."
+        )
+        return
+
+    # --- Фильтры ---
+    selected: dict[str, dict] = dict(pairs)
+
+    # --currency CODE
+    if args.currency:
+        code = args.currency.upper()
+        filtered = {
+            k: v for k, v in selected.items() if k.startswith(f"{code}_")
+        }
+        if not filtered:
+            print(f"Курс для '{code}' не найден в кеше.")
+            return
+        selected = filtered
+
+    # --top N (только крипто, по убыванию rate)
+    if args.top:
+        crypto_codes = set(cfg.CRYPTO_CURRENCIES)
+        crypto_pairs = {
+            k: v
+            for k, v in selected.items()
+            if k.split("_", 1)[0] in crypto_codes
+        }
+        if not crypto_pairs:
+            print("Криптовалютных курсов в кеше нет.")
+            return
+        sorted_items = sorted(
+            crypto_pairs.items(),
+            key=lambda kv: kv[1].get("rate", 0.0),
+            reverse=True,
+        )
+        selected = dict(sorted_items[: args.top])
+
+    # --base BASE (конвертация через кросс-курс к USD)
+    base = (args.base or "USD").upper()
+    if base != "USD":
+        usd_to_base = pairs.get(f"{base}_USD")
+        if not usd_to_base or not usd_to_base.get("rate"):
+            print(
+                f"Невозможно пересчитать в базу '{base}': "
+                f"курс {base}_USD отсутствует в кеше."
+            )
+            return
+        # 1 USD = 1/rate(base_USD) BASE
+        usd_to_base_rate = 1.0 / usd_to_base["rate"]
+        converted: dict[str, dict] = {}
+        for pair, entry in selected.items():
+            rate = entry.get("rate")
+            if not isinstance(rate, (int, float)):
+                continue
+            # Переименовываем пару: CODE_USD -> CODE_BASE
+            code, _, _to = pair.partition("_")
+            new_pair = f"{code}_{base}"
+            converted[new_pair] = {
+                "rate": rate * usd_to_base_rate,
+                "updated_at": entry.get("updated_at"),
+                "source": entry.get("source"),
+            }
+        selected = converted
+
+    # --- Вывод ---
+    if base != "USD":
+        header = (
+            f"Курсы из кеша (обновлено: {last_refresh}, база: {base}):"
+        )
+    else:
+        header = f"Курсы из кеша (обновлено: {last_refresh}):"
+    print(header)
+
+    table = PrettyTable()
+    table.field_names = ["Пара", "Курс", "Обновлено", "Источник"]
+    for pair in sorted(selected.keys()):
+        entry = selected[pair]
+        table.add_row(
+            [
+                pair,
+                f"{entry.get('rate', 0.0):.8f}",
+                entry.get("updated_at", "н/д"),
+                entry.get("source", "н/д"),
+            ]
+        )
+    table.align = "l"
+    print(table)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Создаёт парсер аргументов с подкомандами."""
     parser = argparse.ArgumentParser(
@@ -201,6 +339,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_rate.add_argument("--from", dest="from_currency", required=True, help="Исходная валюта")
     p_rate.add_argument("--to", dest="to_currency", required=True, help="Целевая валюта")
     p_rate.set_defaults(func=cmd_get_rate)
+
+    # update-rates
+    p_update = subparsers.add_parser(
+        "update-rates",
+        help="Обновить курсы через Parser Service (CoinGecko / ExchangeRate-API)",
+    )
+    p_update.add_argument(
+        "--source",
+        choices=["coingecko", "exchangerate"],
+        default=None,
+        help="Обновить только из указанного источника",
+    )
+    p_update.set_defaults(func=cmd_update_rates)
+
+    # show-rates
+    p_show_rates = subparsers.add_parser(
+        "show-rates",
+        help="Показать курсы из локального кеша (с фильтрами)",
+    )
+    p_show_rates.add_argument(
+        "--currency",
+        default=None,
+        help="Фильтр по коду валюты (например, BTC)",
+    )
+    p_show_rates.add_argument(
+        "--top",
+        type=int,
+        default=None,
+        help="Показать N самых дорогих криптовалют",
+    )
+    p_show_rates.add_argument(
+        "--base",
+        default="USD",
+        help="База для пересчёта (например, EUR)",
+    )
+    p_show_rates.set_defaults(func=cmd_show_rates)
 
     return parser
 

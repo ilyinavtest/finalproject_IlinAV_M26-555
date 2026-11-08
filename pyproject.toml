@@ -5,6 +5,7 @@ description = "Virtual portfolio platform for fiat and crypto currencies with pa
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "prettytable>=3.18.0",
     "python-dotenv>=1.2.4",
     "requests>=2.32.0",
 ]
