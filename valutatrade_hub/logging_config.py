@@ -48,10 +48,13 @@ def setup_logging() -> logging.Logger:
     logger.setLevel(getattr(logging, log_level, logging.INFO))
     logger.propagate = False
 
+    log_max_bytes = int(settings.get("log_max_bytes", 1_000_000))
+    log_backup_count = int(settings.get("log_backup_count", 3))
+
     handler = RotatingFileHandler(
         filename=str(log_file),
-        maxBytes=1_000_000,
-        backupCount=3,
+        maxBytes=log_max_bytes,
+        backupCount=log_backup_count,
         encoding="utf-8",
     )
 
@@ -90,10 +93,13 @@ def get_parser_logger() -> logging.Logger:
     logger.setLevel(getattr(logging, log_level, logging.INFO))
     logger.propagate = False
 
+    log_max_bytes = int(settings.get("log_max_bytes", 1_000_000))
+    log_backup_count = int(settings.get("log_backup_count", 3))
+
     handler = RotatingFileHandler(
         filename=str(parser_log_file),
-        maxBytes=1_000_000,
-        backupCount=3,
+        maxBytes=log_max_bytes,
+        backupCount=log_backup_count,
         encoding="utf-8",
     )
     handler.setFormatter(_FORMATTER_TEXT)
