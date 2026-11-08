@@ -26,6 +26,8 @@ class User:
 
         if not self._username.strip():
             raise ValueError("Имя пользователя не может быть пустым.")
+        if not self._hashed_password or not self._salt:
+            raise ValueError("hashed_password и salt обязательны.")
 
     @property
     def user_id(self) -> int:
